@@ -1,0 +1,354 @@
+---
+title: "Assignment 2"
+format: html
+theme: sandstone
+editor: source
+---
+
+Andrew Steinkruger  
+AEC 699  
+April 18, 2026  
+
+## Header
+
+Text
+
+```{r packages, message = FALSE, warning = FALSE}
+
+library(openxlsx)
+library(magrittr)
+library(tibble)
+library(janitor)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(gt)
+
+```
+
+## Data
+
+Get EIA.
+
+```{r data}
+
+url <- "https://www.eia.gov/coal/archive/coal_historical_exports.xlsx"
+path <- "../data/coal_historical_exports.csv"
+check <- file.exists(path)
+
+if(check){
+  dat_coal <- read.csv(path)
+  message("Read data from disk.")
+}else{
+  dat_coal <- read.xlsx(url, startRow = 4, na.strings = ".")
+  write.csv(dat_coal, path, row.names = FALSE)
+  message("Read data from web, then wrote data to disk.")
+}
+
+rm(url, path, check)
+
+```
+## (1) Fixing Column Names
+
+Fix column names. 
+
+```{r names}
+
+dat_coal_names = dat_coal %>% as_tibble %>% clean_names
+
+```
+
+## (2) Annual Coal Exports
+
+Plot annual coal exports. 
+
+```{r vis_1}
+
+vis_1 = 
+  dat_coal_names %>%
+  mutate(total_millions = total * 1e-6,
+         total_revenue_billions = total_revenue * 1e-9) %>% 
+  select(year, 
+         total_millions, 
+         total_revenue_billions) %>% 
+  pivot_longer(-year) %>% 
+  group_by(year, name) %>% 
+  summarize(value = value %>% sum(na.rm = TRUE), .groups = "drop_last") %>% 
+  ungroup %>% 
+  ggplot() + 
+  geom_col(aes(x = year %>% factor,
+               y = value,
+               fill = name)) + 
+  facet_wrap(~ name, 
+             scales = "free")
+
+# export and reference in markdown
+
+```
+
+## (3) Quarterly Coal Exports
+
+Plot quarterly coal exports. 
+
+```{r vis_2}
+
+vis_2 = 
+  dat_coal_names %>%
+  # filter(year %in% 2002:2005) %>% 
+  mutate(total_millions = total * 1e-6,
+         total_revenue_billions = total_revenue * 1e-9,
+         yearquarter = paste0(year, " Q", quarter)) %>% 
+  select(yearquarter, 
+         total_millions, 
+         total_revenue_billions) %>% 
+  pivot_longer(-yearquarter) %>% 
+  mutate(name_factor = 
+           ifelse(name == "total_millions", 
+                  "Exports (Short Tons, Millions)",
+                  "Exports (Nominal US$, Billions)") %>% 
+           factor) %>% 
+  group_by(yearquarter, name) %>% 
+  summarize(value = value %>% sum(na.rm = TRUE), .groups = "drop_last") %>% 
+  ungroup %>% 
+  ggplot() + 
+  geom_col(aes(x = yearquarter %>% factor,
+               y = value,
+               fill = name)) + 
+  scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
+  labs(x = NULL, y = NULL) + 
+  facet_wrap(~ name, 
+             scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# export and reference in markdown
+
+# note date handling not required
+
+```
+
+Describe date handling without being annoying. 
+
+## (Bonus) Seasonal Trends
+
+Decompose the time series to get a seasonal trend out visually. 
+
+## (4) Exports by Destination
+
+### (4.1) 
+
+```{r data_41}
+
+coal_country = 
+  dat_coal_names %>% 
+  group_by(year, quarter, coal_destination_country) %>% 
+  summarize(total = total %>% sum(na.rm = TRUE),
+            total_revenue = total_revenue %>% sum(na.rm = TRUE),
+            .groups = "drop_last") %>% 
+  ungroup
+
+coal_country %>% head(10) %>% gt
+
+```
+
+### (4.2)
+
+```{r data_42}
+
+# What number of countries should we observe in each quarter?
+#  This will be useful later.
+
+int_country = 
+  coal_country %>% 
+  pull(coal_destination_country) %>% 
+  unique %>% 
+  length
+
+# What number of quarters should we observe for each country?
+#  Note that we could be missing years (although we're not). 
+
+int_length = 
+  coal_country %>% 
+  pull(year) %>% 
+  unique %>% 
+  {seq(min(.), max(.))} %>%  
+  length %>% 
+  multiply_by(4)
+
+# What number of observations do we observe for each country?
+
+coal_country_missing = 
+  coal_country %>% 
+  group_by(coal_destination_country) %>% 
+  summarize(observations = n()) %>% 
+  ungroup %>% 
+  mutate(check = (observations == int_length),
+         proportion = observations / int_length)
+
+coal_country_missing %>% head(10) %>% gt
+
+# What's the distribution of observation missingness by country?
+
+vis_missing = 
+  coal_country_missing %>% 
+  ggplot() +
+  geom_histogram(aes(x = proportion))
+
+vis_missing
+
+```
+
+### (4.3)
+
+```{r data_43}
+
+# Complete the data with missing observations by country, year, and quarter. 
+
+coal_country_complete = 
+  coal_country %>% 
+  complete(year, quarter, coal_destination_country) %>% 
+  arrange(coal_destination_country, year, quarter)
+
+# Check whether the data are complete. 
+
+int_obs_expected = 
+  coal_country %>% 
+  pull(coal_destination_country) %>% 
+  unique %>% 
+  length %>% 
+  multiply_by(int_length)
+
+int_obs_actual = 
+  coal_country_complete %>% 
+  nrow
+
+int_obs_actual == int_obs_expected
+
+# Show off the complete data. 
+
+coal_country_complete %>% head(10) %>% gt
+
+```
+
+### (4.4)
+
+```{r data_44}
+
+# Check whether there is a quarter with no non-missing observations. 
+
+coal_country_complete %>% 
+  mutate(missing = is.na(total)) %>% 
+  group_by(year, quarter) %>% 
+  summarize(missing = sum(missing),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  mutate(check = (missing == int_country)) %>% 
+  filter(check) %>% 
+  nrow
+
+```
+### (4.5)
+
+```{r data_45}
+
+# Check the top ten importers of coal from the United States. 
+
+#  Tonnage
+
+coal10_culm = 
+  coal_country %>% 
+  group_by(coal_destination_country) %>% 
+  summarize(total = total %>% sum(na.rm = TRUE),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+coal10_culm %>% gt
+
+#  Value
+
+coal10_value = 
+  coal_country %>% 
+  group_by(coal_destination_country) %>% 
+  summarize(total_revenue = total_revenue %>% sum(na.rm = TRUE),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  arrange(desc(total_revenue)) %>% 
+  slice(1:10)
+
+coal10_value %>% gt
+
+```
+
+### (4.6)
+
+```{r data_46}
+
+# Check the top ten importers of coal from the United States for 2025 Q4. 
+
+#  Tonnage
+
+coal10_tonnage_recent = 
+  coal_country %>% 
+  filter(year == max(year)) %>% 
+  filter(quarter == max(quarter)) %>% 
+  arrange(desc(total)) %>% 
+  slice(1:10)
+
+coal10_tonnage_recent %>% gt
+
+#  Value
+
+coal10_value_recent = 
+  coal_country %>% 
+  filter(year == max(year)) %>% 
+  filter(quarter == max(quarter)) %>% 
+  arrange(desc(total_revenue)) %>% 
+  slice(1:10)
+
+coal10_value_recent %>% gt
+
+```
+
+### (4.7)
+
+```{r vis_47}
+
+vis_top = 
+  coal_country %>% 
+  left_join(coal10_culm %>% 
+              mutate(rank = row_number()) %>% 
+              select(-total)) %>% 
+  mutate(yearquarter = paste0(year, " Q", quarter),
+         country = coal_destination_country, 
+         total_millions = total * 1e-6,
+         total_revenue_billions = total_revenue * 1e-9,
+         rank = rank %>% as.character %>% replace_na("Other"),
+         .keep = "none") %>% 
+  group_by(yearquarter, rank) %>% 
+  summarize(total_millions = total_millions %>% sum(na.rm = TRUE),
+            total_revenue_billions = total_revenue_billions %>% sum(na.rm = TRUE),
+            country = country %>% max) %>% 
+  ungroup %>% 
+  mutate(country = ifelse(rank == "Other", "Other", country)) %>% 
+  pivot_longer(cols = c(total_millions, total_revenue_billions)) %>% 
+  mutate(name_factor = 
+           ifelse(name == "total_millions", 
+                  "Exports (Short Tons, Millions)",
+                  "Exports (Nominal US$, Billions)") %>% 
+           factor) %>% 
+  ggplot() + 
+  geom_line(aes(x = yearquarter %>% factor,
+               y = value,
+               color = name,
+               group = country)) + 
+  scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
+  labs(x = NULL, y = NULL) + 
+  facet_wrap(~ name, 
+             scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
