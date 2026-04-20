@@ -2,6 +2,9 @@
 title: "Assignment 2"
 format: html
 theme: sandstone
+toc: true
+toc-depth: 3
+toc-float: yes
 editor: source
 ---
 
@@ -23,6 +26,11 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(gt)
+library(forcats)
+library(ggthemes)
+library(scales)
+library(ggtext)
+library(plotly)
 
 ```
 
@@ -298,17 +306,6 @@ coal10_tonnage_recent =
 
 coal10_tonnage_recent %>% gt
 
-#  Value
-
-coal10_value_recent = 
-  coal_country %>% 
-  filter(year == max(year)) %>% 
-  filter(quarter == max(quarter)) %>% 
-  arrange(desc(total_revenue)) %>% 
-  slice(1:10)
-
-coal10_value_recent %>% gt
-
 ```
 
 ### (4.7)
@@ -323,32 +320,151 @@ vis_top =
   mutate(yearquarter = paste0(year, " Q", quarter),
          country = coal_destination_country, 
          total_millions = total * 1e-6,
-         total_revenue_billions = total_revenue * 1e-9,
          rank = rank %>% as.character %>% replace_na("Other"),
          .keep = "none") %>% 
   group_by(yearquarter, rank) %>% 
   summarize(total_millions = total_millions %>% sum(na.rm = TRUE),
-            total_revenue_billions = total_revenue_billions %>% sum(na.rm = TRUE),
             country = country %>% max) %>% 
   ungroup %>% 
-  mutate(country = ifelse(rank == "Other", "Other", country)) %>% 
-  pivot_longer(cols = c(total_millions, total_revenue_billions)) %>% 
-  mutate(name_factor = 
-           ifelse(name == "total_millions", 
-                  "Exports (Short Tons, Millions)",
-                  "Exports (Nominal US$, Billions)") %>% 
-           factor) %>% 
+  mutate(country = ifelse(rank == "Other", "Other", country),
+         country = country %>% 
+           factor %>% 
+           fct_reorder(.x = total_millions,
+                       .fun = max,
+                       .desc = TRUE)) %>% 
   ggplot() + 
   geom_line(aes(x = yearquarter %>% factor,
-               y = value,
-               color = name,
-               group = country)) + 
+                y = total_millions,
+                group = country)) + 
   scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
-  labs(x = NULL, y = NULL) + 
-  facet_wrap(~ name, 
+  labs(y = "U.S. Coal Exports (Short Tons, Millions)") + 
+  facet_wrap(~ country, 
              scales = "free") +
   theme_minimal() +
   theme(legend.position = "none")
 
+vis_top
+
 ```
 
+### (4.8)
+
+```{r vis_48}
+
+# Replicate the previous figure with more interesting visualization tools. 
+
+vis_top_better = 
+  dat_coal_names %>% 
+  select(year, 
+         quarter, 
+         country = coal_destination_country,
+         tonnage_steam = steam_coal,
+         tonnage_metal = metallurgical,
+         tonnage_coke = coke) %>% 
+  group_by(year, quarter, country) %>% 
+  summarize(across(starts_with("tonnage"), ~ sum(.x, na.rm = TRUE)),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  complete(year, quarter, country) %>% 
+  arrange(country, year, quarter) %>% 
+  mutate(yearquarter = paste0(year, " Q", quarter)) %>% 
+  pivot_longer(cols = starts_with("tonnage")) %>% 
+  mutate(value = value * 1e-6,
+         product = 
+           case_when(name == "tonnage_steam" ~ "Steam Coal",
+                     name == "tonnage_metal" ~ "Metallurgical Coal",
+                     TRUE ~ "Coke")) %>% 
+  left_join(coal10_culm %>% 
+              filter(row_number() %in% 1:5) %>% 
+              mutate(rank = row_number()) %>% 
+              select(-total),
+            by = c("country" = "coal_destination_country")) %>% 
+  mutate(rank = rank %>% as.character %>% replace_na("Other")) %>% 
+  group_by(yearquarter, 
+           rank,
+           product) %>% 
+  summarize(value = value %>% sum(na.rm = TRUE),
+            country = country %>% max,
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  mutate(country = 
+           case_when(rank == "Other" ~ "Other",
+                     country == "South Korea (Republic of Korea)" ~ "South Korea",
+                     country == "Germany, Federal Republic of" ~ "Germany",
+                     TRUE ~ country) %>% 
+           factor %>% 
+           fct_reorder(.x = value,
+                       .fun = sum,
+                       .desc = TRUE) %>% 
+           fct_relevel("Other",
+                       after = Inf),
+         product = 
+           product %>% 
+           factor %>% 
+           fct_rev,
+         yearquarter = yearquarter %>% factor) %>% 
+  # Add human-facing names for plotly. 
+  rename(`Short Tons, Millions` = value,
+         `Year and Quarter` = yearquarter,
+         Product = product) %>% 
+  ggplot() + 
+  geom_line(aes(x = `Year and Quarter`,
+                y = `Short Tons, Millions`,
+                group = Product,
+                color = Product),
+            linewidth = 1.00,
+            alpha = 0.75) + 
+  scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
+  facet_wrap(~ country,
+             ncol = 1, 
+             nrow = 6,
+             scales = "free_y",
+             strip.position = "right") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 3)) +
+  scale_color_solarized() + 
+  labs(x = NULL,
+       y = "Short Tons, Millions",
+       color = NULL,
+       title = "Quarterly U.S. coal exports to top 5 destinations, 2002-2025",
+       caption = "Data: U.S. Energy Information Administration, *Quarterly Coal Report, 2026*") +
+  theme_solarized() +
+  theme(axis.text.x = 
+          element_text(angle = 45, 
+                       vjust = 1.0, 
+                       hjust = 1.0),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        plot.caption = element_markdown())
+
+ggsave("../out/vis_top_better.png",
+       vis_top_better,
+       dpi = 300,
+       width = 6.5,
+       height = 9)
+
+ggsave("vis_top_better.png",
+       vis_top_better,
+       dpi = 300,
+       width = 6.5,
+       height = 9)
+
+```
+
+![](vis_top_better.png){fig-alt="A prettier plot of export destinations." fig-align="center" width="100%"}
+### (4.9)
+
+Note that plotly does not support horizontal legends.
+
+Drop it for duplicated information. 
+
+Also note that plotly is no longer actively supporting R. 
+
+```{r vis_49}
+
+ggplotly(vis_top_better + theme(legend.position = "none"),
+         width = 750,
+         height = 900)
+
+```
+
+## (5)
