@@ -87,8 +87,12 @@ vis_1 =
   geom_col(aes(x = year %>% factor,
                y = value,
                fill = name)) + 
+  scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
+  labs(x = NULL, y = NULL) + 
   facet_wrap(~ name, 
-             scales = "free")
+             scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "none")
 
 # export and reference in markdown
 
@@ -101,8 +105,7 @@ Plot quarterly coal exports.
 ```{r vis_2}
 
 vis_2 = 
-  dat_coal_names %>%
-  # filter(year %in% 2002:2005) %>% 
+  dat_coal_names %>% 
   mutate(total_millions = total * 1e-6,
          total_revenue_billions = total_revenue * 1e-9,
          yearquarter = paste0(year, " Q", quarter)) %>% 
@@ -137,9 +140,29 @@ vis_2 =
 
 Describe date handling without being annoying. 
 
-## (Bonus) Seasonal Trends
-
 Decompose the time series to get a seasonal trend out visually. 
+
+```{r seasonality}
+
+vis_seasonality = 
+  dat_coal_names %>% 
+  group_by(year, quarter) %>% 
+  summarize(total_millions = total %>% sum(na.rm = TRUE) %>% multiply_by(1e-6),
+            total_revenue_billions = total_revenue %>% sum(na.rm = TRUE) %>% multiply_by(1e-9),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  pivot_longer(cols = starts_with("total")) %>% 
+  ggplot() + 
+  geom_boxplot(aes(x = quarter %>% factor,
+                   y = value,
+                   color = name)) +
+  labs(x = NULL, y = NULL) + 
+  facet_wrap(~ name,
+             scales = "free") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
 
 ## (4) Exports by Destination
 
@@ -451,6 +474,7 @@ ggsave("vis_top_better.png",
 ```
 
 ![](vis_top_better.png){fig-alt="A prettier plot of export destinations." fig-align="center" width="100%"}
+
 ### (4.9)
 
 Note that plotly does not support horizontal legends.
@@ -468,3 +492,44 @@ ggplotly(vis_top_better + theme(legend.position = "none"),
 ```
 
 ## (5)
+
+Is there an obvious relationship between prices and quantities by product?
+
+```{r}
+
+vis_5 = 
+  dat_coal_names %>% 
+  select(year, 
+         quarter, 
+         customs_district, 
+         coal_destination_country,
+         q_steam = steam_coal,
+         q_metal = metallurgical,
+         q_coke = coke,
+         pq_steam = steam_revenue,
+         pq_metal = metallurgical_revenue,
+         pq_coke = coke_revenue) %>% 
+  group_by(year,
+           quarter,
+           coal_destination_country) %>% 
+  summarize(across(starts_with(c("q_", "pq_")), ~ sum(.x, na.rm = TRUE)),
+            .groups = "drop_last") %>% 
+  ungroup %>% 
+  pivot_longer(cols = starts_with(c("q_", "pq_")),
+               names_sep = "_",
+               names_to = c("var", "product")) %>% 
+  drop_na %>% 
+  pivot_wider(names_from = var,
+              values_from = value) %>% 
+  mutate(p = pq / q) %>% 
+  drop_na %>% 
+  # filter(p > quantile(p, 0.05) & p < quantile(p, 0.95)) %>% 
+  # filter(q > quantile(q, 0.05) & q < quantile(q, 0.95)) %>% 
+  ggplot() + 
+  geom_point(aes(x = q,
+                 y = p)) +
+  facet_wrap(~ product,
+             scales = "free")
+
+```
+
