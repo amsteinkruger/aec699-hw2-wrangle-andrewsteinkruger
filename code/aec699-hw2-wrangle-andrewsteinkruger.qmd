@@ -14,7 +14,7 @@ April 18, 2026
 
 ## Header
 
-Text
+We can start with (a lot of) packages. 
 
 ```{r packages, message = FALSE, warning = FALSE}
 
@@ -36,7 +36,11 @@ library(plotly)
 
 ## Data
 
-Get EIA.
+To pull in an Excel file from EIA, we can:
+
+1. Check whether the file is already on disk. 
+2. If the file is already on disk, read the data from disk. 
+3. If the file is not already on disk, read the data from the web and save. 
 
 ```{r data}
 
@@ -56,9 +60,10 @@ if(check){
 rm(url, path, check)
 
 ```
+
 ## (1) Fixing Column Names
 
-Fix column names. 
+The janitor package can fix all sorts of problems with column names. 
 
 ```{r names}
 
@@ -94,9 +99,15 @@ vis_1 =
   theme_minimal() +
   theme(legend.position = "none")
 
-# export and reference in markdown
+ggsave("../out/vis_1.png",
+       vis_1,
+       dpi = 300,
+       width = 6.5, 
+       height = 4)
 
 ```
+
+![](out/vis_1.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
 
 ## (3) Quarterly Coal Exports
 
