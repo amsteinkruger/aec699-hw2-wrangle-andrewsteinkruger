@@ -12,7 +12,7 @@ Andrew Steinkruger
 AEC 699  
 April 18, 2026  
 
-## Header
+## Packages
 
 We can start with (a lot of) packages. 
 
@@ -63,7 +63,7 @@ rm(url, path, check)
 
 ## (1) Fixing Column Names
 
-The janitor package can fix all sorts of problems with column names. 
+The janitor package cleans up column names. 
 
 ```{r names}
 
@@ -73,7 +73,7 @@ dat_coal_names = dat_coal %>% as_tibble %>% clean_names
 
 ## (2) Annual Coal Exports
 
-Plot annual coal exports. 
+What trends can we see in an annual time series of aggregate exports?
 
 ```{r vis_1}
 
@@ -92,14 +92,14 @@ vis_1 =
   geom_col(aes(x = year %>% factor,
                y = value,
                fill = name)) + 
-  scale_x_discrete(breaks = c("2002 Q1", "2013 Q3", "2025 Q4")) +
-  labs(x = NULL, y = NULL) + 
+  scale_x_discrete(breaks = c("2002", "2013", "2025")) +
+  labs(x = NULL, y = NULL) +
   facet_wrap(~ name, 
              scales = "free") +
   theme_minimal() +
   theme(legend.position = "none")
 
-ggsave("../out/vis_1.png",
+ggsave("vis_1.png",
        vis_1,
        dpi = 300,
        width = 6.5, 
@@ -107,11 +107,20 @@ ggsave("../out/vis_1.png",
 
 ```
 
-![](out/vis_1.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
+![](vis_1.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
+**Figure 1.** Aggregate U.S. coal exports by year. 
+
+We have: 
+
+1. A long-term (23-year) increase in exports measured as short tons and nominal dollars. 
+2. A couple of busts around 2016 and 2020. 
+3. A few apparent boom periods around the busts. 
 
 ## (3) Quarterly Coal Exports
 
-Plot quarterly coal exports. 
+What subannual trends emerge with disaggregation to quarters? 
+
+Note that the structure of this panel simplifies the perennial problem of handling dates. If we had data for only a subset of quarters, then we would have to complete the dataframe with implicit nulls (as in (4.3)) or use a data format like POSIXct with an alias for the year-quarter format. But we have data for all quarters (with aggregation across destination countries), so that any string of the format "YYYY-Q" will return observations and ggplot2 visualizations with the behavior we might hope for. 
 
 ```{r vis_2}
 
@@ -143,13 +152,21 @@ vis_2 =
   theme_minimal() +
   theme(legend.position = "none")
 
-# export and reference in markdown
-
-# note date handling not required
+ggsave("vis_2.png",
+       vis_2,
+       dpi = 300,
+       width = 6.5, 
+       height = 4)
 
 ```
 
-Describe date handling without being annoying. 
+![](vis_2.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
+
+**Figure 2.** Aggregate U.S. coal exports by year and quarter. 
+
+Annual trends persist, some suggestion of seasonal variation. 
+
+Note that spotting quarterly variation and parsing bars for quarters is hard. 
 
 Decompose the time series to get a seasonal trend out visually. 
 
@@ -469,12 +486,6 @@ vis_top_better =
         legend.position = "top",
         legend.direction = "horizontal",
         plot.caption = element_markdown())
-
-ggsave("../out/vis_top_better.png",
-       vis_top_better,
-       dpi = 300,
-       width = 6.5,
-       height = 9)
 
 ggsave("vis_top_better.png",
        vis_top_better,
