@@ -10,7 +10,7 @@ editor: source
 
 Andrew Steinkruger  
 AEC 699  
-April 18, 2026  
+April 24, 2026  
 
 ## Packages
 
@@ -97,7 +97,8 @@ vis_1 =
   facet_wrap(~ name, 
              scales = "free") +
   theme_minimal() +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 ggsave("vis_1.png",
        vis_1,
@@ -108,6 +109,7 @@ ggsave("vis_1.png",
 ```
 
 ![](vis_1.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
+
 **Figure 1.** Aggregate U.S. coal exports by year. 
 
 We have: 
@@ -150,7 +152,8 @@ vis_2 =
   facet_wrap(~ name, 
              scales = "free") +
   theme_minimal() +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 ggsave("vis_2.png",
        vis_2,
@@ -160,15 +163,11 @@ ggsave("vis_2.png",
 
 ```
 
-![](vis_2.png){fig-alt="Annualized U.S. coal exports." fig-align="center" width="80%"}
+![](vis_2.png){fig-alt="Quarterly U.S. coal exports." fig-align="center" width="80%"}
 
 **Figure 2.** Aggregate U.S. coal exports by year and quarter. 
 
-Annual trends persist, some suggestion of seasonal variation. 
-
-Note that spotting quarterly variation and parsing bars for quarters is hard. 
-
-Decompose the time series to get a seasonal trend out visually. 
+The multiannual trends shown in Figure 1 still account for most of the variation in the data. There are some patterns over quarters in the earlier years of the dataset (2002-2008) that suggest subannual trends. We can take a closer look at this seasonal variation in another plot with exports by quarter. 
 
 ```{r seasonality}
 
@@ -190,11 +189,29 @@ vis_seasonality =
   theme_minimal() +
   theme(legend.position = "none")
 
+ggsave("vis_seasonality.png",
+       vis_seasonality,
+       dpi = 300,
+       width = 4.25, 
+       height = 4)
+
 ```
+
+![](vis_seasonality.png){fig-alt="U.S. coal exports by quarter." fig-align="center" width="60%"}
+
+**Figure 3.** Aggregate U.S. coal exports by quarter in Tukey's box plots. 
+
+Visualizing exports by quarter does not indicate a strong quarterly trend. We could go further with a time series decomposition to control for different annual and multiannual trends. We could also disaggregate exports by destination country to look for seasonality in a regression analysis with country fixed effects. Both approaches are a little more than this exercise requires.  
 
 ## (4) Exports by Destination
 
+For a closer look at exports, we can preserve destination countries in the data. 
+
 ### (4.1) 
+
+A simple first step is to reorganize the data by year, quarter, and country. 
+
+The gt package is helpful for printing data in a human-facing format. 
 
 ```{r data_41}
 
@@ -208,9 +225,13 @@ coal_country =
 
 coal_country %>% head(10) %>% gt
 
+coal_country %>% nrow
+
 ```
 
 ### (4.2)
+
+The count of rows in the dataframe differs from the product of the counts of countries and year-quarters, which is suspicious. We can explicate that difference with a little arithmetic, then take a closer look at the rate of missingness across countries. 
 
 ```{r data_42}
 
@@ -251,13 +272,27 @@ coal_country_missing %>% head(10) %>% gt
 vis_missing = 
   coal_country_missing %>% 
   ggplot() +
-  geom_histogram(aes(x = proportion))
+  geom_histogram(aes(x = proportion),
+                 bins = 50) +
+  theme_minimal() +
+  theme(legend.position = "none")
 
-vis_missing
-
+ggsave("vis_missing.png",
+       vis_missing,
+       dpi = 300,
+       width = 4.25, 
+       height = 4)
 ```
 
+![](vis_missing.png){fig-alt="Counts of countries by proportions of missing observations." fig-align="center" width="60%"}
+
+**Figure 4.** Counts of export destination countries by proportions of missing observations. 
+
+There are a lot of missing observations! However, a casual look at missingness by country suggests that these missing observations are really just zeros: EIA does not always plug in a zero-valued observation for each country that happens to import zero coal from the United States in a particular quarter. 
+
 ### (4.3)
+
+We can add those zero-valued observations with a little wrangling. 
 
 ```{r data_43}
 
@@ -289,7 +324,11 @@ coal_country_complete %>% head(10) %>% gt
 
 ```
 
+The equality check that returns "TRUE" in the preceding code chunk looks at whether our wrangling works: it does! Then the tabulated data are showing the same thing: Albania does not, in fact, have coal imports from the U.S. on record for the first few years of the dataset. For our purposes, it's fine for these observations to remain NA-valued rather than zero-valued, but we could also swap in explicit zeros with replace_na() among other options. 
+
 ### (4.4)
+
+What if we accidentally extended the panel to include year-quarters with no observations at all? We can check whether this happened with a quick count of rows where the number of observations without data is equal to the number of countries we expect to see in each year-quarter. 
 
 ```{r data_44}
 
@@ -306,7 +345,14 @@ coal_country_complete %>%
   nrow
 
 ```
+
+Turns out there are no year-quarters present in the data with only missing observations.  
+
 ### (4.5)
+
+Which countries are most important? We can pull out the top ten destination countries by cumulative sum. 
+
+Comparing exports by tonnage and value is interesting but convenient to neglect from here on: value would require inflation adjustment to be meaningful over time, and while there are some interesting differences in tonnage and value across countries, the picture is almost identical over top countries. 
 
 ```{r data_45}
 
@@ -325,28 +371,17 @@ coal10_culm =
 
 coal10_culm %>% gt
 
-#  Value
-
-coal10_value = 
-  coal_country %>% 
-  group_by(coal_destination_country) %>% 
-  summarize(total_revenue = total_revenue %>% sum(na.rm = TRUE),
-            .groups = "drop_last") %>% 
-  ungroup %>% 
-  arrange(desc(total_revenue)) %>% 
-  slice(1:10)
-
-coal10_value %>% gt
-
 ```
 
+Over the panel, the distribution of countries by cumulative imports is smooth and linear: there is no single leading country or region in U.S. coal exports. The quantities are interesting on their own for a practitioner without prior knowledge of coal markets. A quick glance at [another EIA webpage](https://www.eia.gov/energyexplained/coal/imports-and-exports.php) suggests the U.S. exports only a small proportion of national coal production, so that these tonnages are small in the context of the full set of markets of U.S. coal. 
+
 ### (4.6)
+
+Are the top ten destination countries different from the full panel to the last year-quarter?  
 
 ```{r data_46}
 
 # Check the top ten importers of coal from the United States for 2025 Q4. 
-
-#  Tonnage
 
 coal10_tonnage_recent = 
   coal_country %>% 
@@ -359,7 +394,11 @@ coal10_tonnage_recent %>% gt
 
 ```
 
+There is some overlap in the tables, but the top ten destination countries do differ. One notable difference is that India is dramatically more important in this table than in the previous result, with almost three times more coal imports from the U.S. than the Netherlands or Canada. 
+
 ### (4.7)
+
+We can learn more about the changes in exports by destination country over time with a plot. 
 
 ```{r vis_47}
 
@@ -392,13 +431,30 @@ vis_top =
   facet_wrap(~ country, 
              scales = "free") +
   theme_minimal() +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
-vis_top
+ggsave("vis_top.png",
+       vis_top,
+       dpi = 300,
+       width = 6.25, 
+       height = 5)
 
 ```
 
+![](vis_top.png){fig-alt="Counts of countries by proportions of missing observations." fig-align="center" width="80%"}
+
+**Figure 5.** U.S. coal exports in short tons to the top ten destination countries by cumulative sums. All other countries are aggregated into "Other." 
+
+This plot gets at a key feature of the country-level time series: most countries are only destinations for meaningful tonnages U.S. coal exports for brief durations, with only a few exceptions. The difference in India's cumulative and last-period rankings is clear in its time series: India went from importing little or no coal in 2002 to becoming the top destination country for U.S. coal in the 2020s. Brazil followed a similar trend, albeit with a higher initial import tonnage and a lower final import tonnage. Canada went in the opposite direction, and we can see some clear seasonal trends in Canada's time series; we might suppose Canada mostly imports coal in the winter. 
+
 ### (4.8)
+
+Figure 5 is fine, but we could make it better. 
+
+To add some visual interest, we can break out exports by product (coal type). 
+
+To let each subplot breathe a little, we can show fewer top destination countries. 
 
 ```{r vis_48}
 
@@ -497,13 +553,14 @@ ggsave("vis_top_better.png",
 
 ![](vis_top_better.png){fig-alt="A prettier plot of export destinations." fig-align="center" width="100%"}
 
+**Figure 6.** A better plot of the top five destination countries for U.S. coal exports by product, with all other countries aggregated into "Other." 
+
+We can see that key trends are somewhat more legible in this plot, and that export portfolios by product are important to understanding trends in some countries' imports of U.S. coal (Canada) but not in others' (Brazil). On a visual note, it's remarkable that a small change in the dimensions of each subplot or facet, from square to wide, has a disproportionate impact on casual interpretation: the rise in exports to India, for example, reads as a more gradual change in a wider subplot than in a square subplot. 
+
+
 ### (4.9)
 
-Note that plotly does not support horizontal legends.
-
-Drop it for duplicated information. 
-
-Also note that plotly is no longer actively supporting R. 
+We can put the same information in an interactive format to support spot-checks of tonnages by product, country, and year-quarter. The plotly package offers an easy approach with some drawbacks: the caption disappears and strip labels hop from the right to the top of each subplot or facet, wasting vertical space. But it's fun to mouse over the time series, and I'm unaware of an alternative to plotly that gets a better result without extraordinary wranglng. 
 
 ```{r vis_49}
 
@@ -513,11 +570,17 @@ ggplotly(vis_top_better + theme(legend.position = "none"),
 
 ```
 
-## (5)
+**Figure 7.** An interactive plot of the top five destination countries.  
+
+## (5) Prices and Quantities
 
 Is there an obvious relationship between prices and quantities by product?
 
-```{r}
+I will explore this relationship by destination country, and year-quarter. 
+
+I hypothesize that quantities are increasing in prices. 
+
+```{r vis_5}
 
 vis_5 = 
   dat_coal_names %>% 
@@ -545,13 +608,67 @@ vis_5 =
               values_from = value) %>% 
   mutate(p = pq / q) %>% 
   drop_na %>% 
+  left_join(coal10_culm %>% 
+              mutate(rank = row_number()) %>% 
+              select(-total) %>% 
+              slice_head(n = 5)) %>% 
+  mutate(# country = ifelse(is.na(rank), "Other", coal_destination_country),
+         # country = 
+         #   case_when(country == "South Korea (Republic of Korea)" ~ "South Korea",
+         #             country == "Germany, Federal Republic of" ~ "Germany",
+         #             TRUE ~ country) %>% 
+         #   factor %>% 
+         #   fct_reorder(.x = rank,
+         #               .desc = FALSE) %>% 
+         #   fct_relevel("Other",
+         #               after = Inf),
+         product = 
+           case_when(product == "steam" ~ "Steam Coal",
+                     product == "metal" ~ "Metallurgical Coal",
+                     TRUE ~ "Coke") %>% 
+           factor %>% 
+           fct_rev) %>% 
   # filter(p > quantile(p, 0.05) & p < quantile(p, 0.95)) %>% 
   # filter(q > quantile(q, 0.05) & q < quantile(q, 0.95)) %>% 
   ggplot() + 
-  geom_point(aes(x = q,
-                 y = p)) +
+  geom_point(aes(x = q %>% log,
+                 y = p %>% log,
+                 color = product),
+                 # color = country),
+             shape = 1,
+             alpha = 0.20) +
+  geom_smooth(aes(x = q %>% log,
+                  y = p %>% log,
+                  color = product),
+              method = lm,
+              se = FALSE) +
+  labs(x = "Log. Quarterly Short Tons by Destination Country",
+       y = "Log. Price (Nominal USD)",
+       title = "Quarterly U.S. coal exports and prices, 2002-2025",
+       caption = "Data: U.S. Energy Information Administration, *Quarterly Coal Report, 2026*") +
   facet_wrap(~ product,
-             scales = "free")
+             scales = "free") +
+  scale_color_solarized() +
+  theme_solarized() +
+  theme(legend.position = "none",
+        plot.caption = element_markdown())
+
+ggsave("vis_5.png",
+       vis_5,
+       dpi = 300,
+       width = 8,
+       height = 4)
 
 ```
+![](vis_5.png){fig-alt="A plot of quantities and prices." fig-align="center" width="100%"}
 
+**Figure 8.** Log-transformed U.S. coal exports by product in short tons and prices in nominal U.S. dollars. Each point represents exports for one year-quarter to one destination country. Each trend line is the result of a simple linear regression of prices on quantities. 
+
+The data do not appear to support my hypothesis. I have a few *ex post* explanations.
+
+1. This result shows that supply slopes downward, contrary to conventional wisdom. 
+2. This result shows that an empirical, economic analysis of U.S. coal exports would be intractable without additional information on domestic and international coal markets; that is, this result suggests an omitted variable bias. 
+3. This result suggests that the U.S. is filling short-term orders for small amounts of coal at extremely high prices, for example to backfill Canadian coal stocks during a cold winter; then price dynamics could explain why smaller export quantities (by country and year-quarter) are related to higher prices. 
+4. The result shows that inferring prices from the quotient of prices and quantities as reported by EIA is a poor idea. This is likely the case: at a glance, [EIA price information](https://www.eia.gov/coal/data.php#prices) does not match the inferred prices in this plot.
+
+Of those, (1) is by far the most promising result to build out in future research. 
